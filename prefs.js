@@ -553,7 +553,7 @@ export default class NetworkShareAutomountPreferences extends ExtensionPreferenc
         
         const versionRow = new Adw.ActionRow({
             title: _('Version'),
-            subtitle: _('2.0')
+            subtitle: _('3.0')
         });
         technicalGroup.add(versionRow);
         
