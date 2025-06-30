@@ -52,9 +52,14 @@ class NetworkMountIndicator extends PanelMenu.Button {
         this._startupMountInProgress = false;
         this._bookmarkMenuItems = new Map(); // Track submenu items for updates
         
+        // File monitoring for bookmarks
+        this._bookmarksFileMonitor = null;
+        this._bookmarksFile = null;
+        
         this._connectSettings();
         this._buildMenu();
-        this._loadBookmarks();
+        this._setupBookmarksFileMonitoring();
+        this._loadBookmarks(); // Initial load
         this._startPeriodicCheck();
         this._setupNotificationSource();
         
@@ -87,6 +92,52 @@ class NetworkMountIndicator extends PanelMenu.Button {
             this._loadBookmarkSettings();
             this._updateBookmarksList();
         });
+    }
+    
+    _setupBookmarksFileMonitoring() {
+        const bookmarksPath = GLib.get_home_dir() + '/.config/gtk-3.0/bookmarks';
+        this._bookmarksFile = Gio.File.new_for_path(bookmarksPath);
+        
+        try {
+            this._bookmarksFileMonitor = this._bookmarksFile.monitor_file(
+                Gio.FileMonitorFlags.NONE,
+                null
+            );
+            
+            this._bookmarksFileMonitor.connect('changed', (monitor, file, otherFile, eventType) => {
+                // Only react to changes, creations, and deletions
+                if (eventType === Gio.FileMonitorEvent.CHANGED ||
+                    eventType === Gio.FileMonitorEvent.CREATED ||
+                    eventType === Gio.FileMonitorEvent.DELETED) {
+                    
+                    console.log('Bookmarks file changed, reloading...');
+                    
+                    // Debounce rapid file changes with a short delay
+                    if (this._bookmarksReloadTimeoutId) {
+                        GLib.source_remove(this._bookmarksReloadTimeoutId);
+                        this._timeoutIds.delete(this._bookmarksReloadTimeoutId);
+                    }
+                    
+                    this._bookmarksReloadTimeoutId = GLib.timeout_add(GLib.PRIORITY_DEFAULT, 500, () => {
+                        this._loadBookmarks();
+                        this._updateBookmarksList();
+                        this._updateStatus();
+                        
+                        this._timeoutIds.delete(this._bookmarksReloadTimeoutId);
+                        this._bookmarksReloadTimeoutId = null;
+                        return GLib.SOURCE_REMOVE;
+                    });
+                    this._timeoutIds.add(this._bookmarksReloadTimeoutId);
+                }
+            });
+            
+            console.log('Set up file monitoring for bookmarks file');
+            
+        } catch (e) {
+            console.error('Failed to set up bookmarks file monitoring:', e);
+            // Fall back to periodic loading if monitoring fails
+            console.log('Falling back to periodic bookmark reloading');
+        }
     }
     
     _setupNotificationSource() {
@@ -145,6 +196,14 @@ class NetworkMountIndicator extends PanelMenu.Button {
         });
         this.menu.addMenuItem(refreshItem);
         
+        let reloadBookmarksItem = new PopupMenu.PopupMenuItem(_('Reload Bookmarks'));
+        reloadBookmarksItem.connect('activate', () => {
+            this._loadBookmarks();
+            this._updateBookmarksList();
+            this._notify(_('Bookmarks Reloaded'), _('Bookmarks have been reloaded from file'));
+        });
+        this.menu.addMenuItem(reloadBookmarksItem);
+        
         let mountAllItem = new PopupMenu.PopupMenuItem(_('Mount All Enabled'));
         mountAllItem.connect('activate', () => {
             this._mountAllEnabled();
@@ -175,26 +234,27 @@ class NetworkMountIndicator extends PanelMenu.Button {
         } else if (mounted > 0) {
             this._icon.icon_name = 'folder-visiting-symbolic'; // Partial
         } else {
-            this._icon.icon_name = 'folder-visting-symbolic'; // None mounted
+            this._icon.icon_name = 'folder-visiting-symbolic'; // None mounted
         }
     }
     
     _loadBookmarks() {
         try {
-            let bookmarksFile = Gio.File.new_for_path(
-                GLib.get_home_dir() + '/.config/gtk-3.0/bookmarks'
-            );
-            
-            if (!bookmarksFile.query_exists(null)) {
-                this._updateBookmarksList([]);
+            if (!this._bookmarksFile.query_exists(null)) {
+                console.log('Bookmarks file does not exist');
+                this._bookmarks = [];
+                this._updateBookmarksList();
                 return;
             }
             
-            let [success, contents] = bookmarksFile.load_contents(null);
-            if (!success) return;
+            let [success, contents] = this._bookmarksFile.load_contents(null);
+            if (!success) {
+                console.log('Failed to read bookmarks file');
+                return;
+            }
             
             let bookmarkLines = new TextDecoder().decode(contents).split('\n');
-            this._bookmarks = bookmarkLines
+            let newBookmarks = bookmarkLines
                 .filter(line => line.trim() && line.includes('://') && !line.startsWith('file://'))
                 .map(line => {
                     let [uri, ...nameParts] = line.trim().split(' ');
@@ -209,9 +269,30 @@ class NetworkMountIndicator extends PanelMenu.Button {
                         failCount: 0
                     };
                 });
+            
+            // Preserve existing status information for bookmarks that still exist
+            if (this._bookmarks.length > 0) {
+                const existingBookmarksMap = new Map(
+                    this._bookmarks.map(b => [b.uri, b])
+                );
                 
+                newBookmarks.forEach(bookmark => {
+                    const existing = existingBookmarksMap.get(bookmark.uri);
+                    if (existing) {
+                        // Preserve runtime state
+                        bookmark.enabled = existing.enabled;
+                        bookmark.createSymlink = existing.createSymlink;
+                        bookmark.symlinkPath = existing.symlinkPath;
+                        bookmark.lastAttempt = existing.lastAttempt;
+                        bookmark.failCount = existing.failCount;
+                    }
+                });
+            }
+            
+            this._bookmarks = newBookmarks;
             this._loadBookmarkSettings();
-            this._updateBookmarksList();
+            
+            console.log(`Loaded ${this._bookmarks.length} network bookmarks`);
             
         } catch (e) {
             console.error('Error loading bookmarks:', e);
@@ -683,10 +764,13 @@ class NetworkMountIndicator extends PanelMenu.Button {
         }
     }
     
+    // PERFORMANCE OPTIMIZATION: This method now only checks mount status,
+    // it no longer reloads bookmarks from disk every time
     _checkAndMountAll(manual = false, isStartup = false) {
         let mounted = 0;
         let total = 0;
-        this._loadBookmarks();
+        
+        // Only update status, don't reload bookmarks from disk
         this._updateStatus();
         
         // Process ALL bookmarks for symlink management, but only mount enabled ones
@@ -713,6 +797,8 @@ class NetworkMountIndicator extends PanelMenu.Button {
         if (manual) {
             this._notify(_('Mount Check'), _(`Checking ${total} locations, ${mounted} already mounted`));
         }
+        
+        console.log(`Periodic check: ${mounted}/${total} mounted, ${this._bookmarks.length} total bookmarks`);
     }
     
     _mountAllEnabled() {
@@ -752,10 +838,13 @@ class NetworkMountIndicator extends PanelMenu.Button {
             GLib.PRIORITY_DEFAULT,
             interval * 60,
             () => {
+                // PERFORMANCE OPTIMIZATION: Only check mount status, don't reload bookmarks
                 this._checkAndMountAll();
                 return GLib.SOURCE_CONTINUE;
             }
         );
+        
+        console.log(`Started periodic check with ${interval} minute interval`);
     }
     
     _openSettings() {
@@ -777,10 +866,22 @@ class NetworkMountIndicator extends PanelMenu.Button {
     }
     
     destroy() {
+        // Clean up file monitor
+        if (this._bookmarksFileMonitor) {
+            this._bookmarksFileMonitor.cancel();
+            this._bookmarksFileMonitor = null;
+        }
+        
         // Remove periodic check timeout
         if (this._timeoutId) {
             GLib.source_remove(this._timeoutId);
             this._timeoutId = null;
+        }
+        
+        // Remove bookmark reload timeout if pending
+        if (this._bookmarksReloadTimeoutId) {
+            GLib.source_remove(this._bookmarksReloadTimeoutId);
+            this._bookmarksReloadTimeoutId = null;
         }
         
         // Remove all tracked timeouts

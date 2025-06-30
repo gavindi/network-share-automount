@@ -261,3 +261,53 @@ Bugs should be reported to the Github bug tracker [https://github.com/gavindi/ne
 
 ## License
 Network Automount Gnome Shell extension is distributed under the terms of the GNU General Public License, version 2. See the LICENSE file for details.
+
+## Changelog
+
+### Version 3.0 - 2025-01-XX
+#### 🚀 Performance Improvements
+- **Major**: Implemented file monitoring for bookmarks instead of periodic disk reads
+  - Extension now uses `Gio.File.monitor_file()` to watch `~/.config/gtk-3.0/bookmarks`
+  - Bookmarks are only reloaded when the file actually changes
+  - Dramatically reduced disk I/O and CPU usage during periodic checks
+- **Optimization**: Periodic timer now only checks mount status, not file system
+- **Enhancement**: Added debounced file change detection (500ms) to handle rapid file modifications
+- **Feature**: Added "Reload Bookmarks" menu option for manual refresh
+- **Improvement**: Runtime state (fail counts, settings) preserved during bookmark reloads
+- **Battery**: Reduced battery usage on laptops due to less frequent file system access
+
+#### 🐛 Bug Fixes
+- **Resource Management**: Proper cleanup of file monitor in destroy() method
+- **Memory**: Better timeout tracking and cleanup
+
+#### 🔧 Technical Changes
+- Separated bookmark loading logic from periodic mount checking
+- Enhanced error handling for file monitoring fallback
+- Improved logging for debugging bookmark file changes
+
+---
+
+### Version 2.0 - 2025-01-XX
+#### ✨ Features
+- Advanced symlink configuration with custom paths
+- Per-bookmark auto-mount and symlink settings
+- Retry mechanism for failed mounts with configurable attempts and delays
+- Comprehensive notification system with granular controls
+- Custom base directory for symlinks with file browser
+- Enhanced preferences UI with tabbed organization
+
+#### 🎨 UI/UX Improvements
+- Collapsible bookmark submenus in panel indicator
+- Real-time status indicators (🟢 mounted, ⚪ unmounted, 🟡 failed)
+- Detailed mount status and connection information
+- Individual mount/unmount controls per bookmark
+
+---
+
+### Version 1.0 - 2025-01-XX
+#### 🎉 Initial Release
+- Basic automatic mounting of bookmarked network shares
+- Periodic mount checking with configurable intervals
+- Simple notification system
+- GNOME Shell 45+ compatibility
+- Basic symlink creation for mounted shares
