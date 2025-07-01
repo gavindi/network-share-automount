@@ -528,11 +528,27 @@ export default class NetworkShareAutomountPreferences extends ExtensionPreferenc
             subtitle: _('© 2025 Gavin Graham, Released under GPLv2')
         });
         
+        // Try to load custom icon, fall back to default if not available
         const extensionIcon = new Gtk.Image({
-            icon_name: 'folder-remote-symbolic',
             pixel_size: 48,
             valign: Gtk.Align.CENTER
         });
+        
+        try {
+            const iconPath = GLib.build_filenamev([this.path, 'icons', 'folder-remote-connected-symbolic.svg']);
+            const iconFile = Gio.File.new_for_path(iconPath);
+            if (iconFile.query_exists(null)) {
+                const customIcon = Gio.FileIcon.new(iconFile);
+                extensionIcon.gicon = customIcon;
+            } else {
+                // Fallback to default icon
+                extensionIcon.icon_name = 'folder-remote-symbolic';
+            }
+        } catch (e) {
+            console.error('Error loading custom icon in preferences:', e);
+            // Fallback to default icon
+            extensionIcon.icon_name = 'folder-remote-symbolic';
+        }
         
         extensionInfoRow.add_prefix(extensionIcon);
         aboutGroup.add(extensionInfoRow);
