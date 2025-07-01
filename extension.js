@@ -37,10 +37,12 @@ class NetworkMountIndicator extends PanelMenu.Button {
         this._settings = settings;
         this._extension = extension;
         this._icon = new St.Icon({
-            icon_name: 'folder-remote-symbolic',
             style_class: 'system-status-icon'
         });
         this.add_child(this._icon);
+        
+        // Load custom icons
+        this._loadCustomIcons();
         
         this._bookmarks = [];
         this._mountedLocations = new Map();
@@ -50,6 +52,7 @@ class NetworkMountIndicator extends PanelMenu.Button {
         this._timeoutIds = new Set(); // Track all timeout IDs for cleanup
         this._source = null;
         this._startupMountInProgress = false;
+        this._mountingInProgress = false; // Track mounting state for icon updates
         this._bookmarkMenuItems = new Map(); // Track submenu items for updates
         
         // File monitoring for bookmarks
@@ -65,6 +68,9 @@ class NetworkMountIndicator extends PanelMenu.Button {
         
         // Mount all enabled bookmarks on startup with status updates
         this._startupMountInProgress = true;
+        this._mountingInProgress = true;
+        this._updateIconState(); // Set mounting icon initially
+        
         const startupTimeoutId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 5, () => {
             this._checkAndMountAll(false, true); // isManual=false, isStartup=true
             this._timeoutIds.delete(startupTimeoutId);
@@ -75,12 +81,95 @@ class NetworkMountIndicator extends PanelMenu.Button {
         // Additional status refresh after startup mounts complete
         const statusTimeoutId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 10, () => {
             this._startupMountInProgress = false;
+            this._mountingInProgress = false;
             this._updateBookmarksList();
             this._updateStatus();
             this._timeoutIds.delete(statusTimeoutId);
             return GLib.SOURCE_REMOVE;
         });
         this._timeoutIds.add(statusTimeoutId);
+    }
+    
+    _loadCustomIcons() {
+        try {
+            // Load connected icon
+            const connectedIconPath = GLib.build_filenamev([this._extension.path, 'icons', 'folder-remote-connected-symbolic.svg']);
+            const connectedFile = Gio.File.new_for_path(connectedIconPath);
+            if (connectedFile.query_exists(null)) {
+                this._connectedIcon = Gio.FileIcon.new(connectedFile);
+            } else {
+                console.warn('Connected icon not found, falling back to default');
+                this._connectedIcon = null;
+            }
+            
+            // Load disconnected icon
+            const disconnectedIconPath = GLib.build_filenamev([this._extension.path, 'icons', 'folder-remote-disconnected-symbolic.svg']);
+            const disconnectedFile = Gio.File.new_for_path(disconnectedIconPath);
+            if (disconnectedFile.query_exists(null)) {
+                this._disconnectedIcon = Gio.FileIcon.new(disconnectedFile);
+            } else {
+                console.warn('Disconnected icon not found, falling back to default');
+                this._disconnectedIcon = null;
+            }
+            
+            // Set initial icon
+            this._updateIconState();
+            
+        } catch (e) {
+            console.error('Error loading custom icons:', e);
+            this._connectedIcon = null;
+            this._disconnectedIcon = null;
+            // Fall back to default icon
+            this._icon.icon_name = 'folder-remote-symbolic';
+        }
+    }
+    
+    _updateIconState() {
+        try {
+            if (this._mountingInProgress) {
+                // Show disconnected icon while mounting
+                if (this._disconnectedIcon) {
+                    this._icon.gicon = this._disconnectedIcon;
+                    this._icon.icon_name = null;
+                } else {
+                    this._icon.icon_name = 'folder-visiting-symbolic';
+                    this._icon.gicon = null;
+                }
+            } else {
+                let total = this._bookmarks.length;
+                let mounted = this._bookmarks.filter(b => this._isLocationMounted(b.uri)).length;
+                let enabled = this._bookmarks.filter(b => b.enabled).length;
+                
+                if (total === 0) {
+                    // No bookmarks - use default
+                    this._icon.icon_name = 'folder-remote-symbolic';
+                    this._icon.gicon = null;
+                } else if (mounted >= enabled) {
+                    // All enabled bookmarks mounted - use connected icon
+                    if (this._connectedIcon) {
+                        this._icon.gicon = this._connectedIcon;
+                        this._icon.icon_name = null;
+                    } else {
+                        this._icon.icon_name = 'folder-remote-symbolic';
+                        this._icon.gicon = null;
+                    }
+                } else {
+                    // Some not mounted - use disconnected icon
+                    if (this._disconnectedIcon) {
+                        this._icon.gicon = this._disconnectedIcon;
+                        this._icon.icon_name = null;
+                    } else {
+                        this._icon.icon_name = 'folder-visiting-symbolic';
+                        this._icon.gicon = null;
+                    }
+                }
+            }
+        } catch (e) {
+            console.error('Error updating icon state:', e);
+            // Fall back to default icon on error
+            this._icon.icon_name = 'folder-remote-symbolic';
+            this._icon.gicon = null;
+        }
     }
     
     _connectSettings() {
@@ -226,16 +315,7 @@ class NetworkMountIndicator extends PanelMenu.Button {
         this._statusItem.label.text = _(`${mounted}/${total} mounted \u2022 Check every ${interval}min`);
     
         // Update icon based on status
-        if (total === 0) {
-            this._icon.icon_name = 'folder-remote-symbolic';
-        } else if (mounted >= enabled) {
-            this._icon.icon_name = 'folder-remote-symbolic'; // All good
-            this._icon.add_style_class_name('success');
-        } else if (mounted > 0) {
-            this._icon.icon_name = 'folder-visiting-symbolic'; // Partial
-        } else {
-            this._icon.icon_name = 'folder-visiting-symbolic'; // None mounted
-        }
+        this._updateIconState();
     }
     
     _loadBookmarks() {
@@ -633,6 +713,10 @@ class NetworkMountIndicator extends PanelMenu.Button {
             return;
         }
         
+        // Set mounting state to show disconnected icon
+        this._mountingInProgress = true;
+        this._updateIconState();
+        
         try {
             let file = Gio.File.new_for_uri(bookmark.uri);
             let mountOp = new Gio.MountOperation();
@@ -649,6 +733,9 @@ class NetworkMountIndicator extends PanelMenu.Button {
                         bookmark.failCount = 0;
                         bookmark.lastAttempt = Date.now();
                         this._mountedLocations.set(bookmark.uri, Date.now());
+                        
+                        // Clear mounting state
+                        this._mountingInProgress = false;
                         
                         // Create symlink after successful mount (if requested)
                         const symlinkTimeoutId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 1, () => {
@@ -672,12 +759,14 @@ class NetworkMountIndicator extends PanelMenu.Button {
                         
                     } catch (e) {
                         console.error(`Failed to mount ${bookmark.name}:`, e);
+                        this._mountingInProgress = false;
                         this._handleMountFailure(bookmark, e.message);
                     }
                 }
             );
         } catch (e) {
             console.error(`Error mounting ${bookmark.name}:`, e);
+            this._mountingInProgress = false;
             this._handleMountFailure(bookmark, e.message);
         }
     }
@@ -706,6 +795,7 @@ class NetworkMountIndicator extends PanelMenu.Button {
         }
         
         this._updateBookmarkSubmenu(bookmark);
+        this._updateStatus();
     }
     
     _scheduleRetry(bookmark, delaySecs) {
@@ -770,6 +860,12 @@ class NetworkMountIndicator extends PanelMenu.Button {
         let mounted = 0;
         let total = 0;
         
+        // Set mounting state if manual or any mounting will occur
+        if (manual || isStartup) {
+            this._mountingInProgress = true;
+            this._updateIconState();
+        }
+        
         // Only update status, don't reload bookmarks from disk
         this._updateStatus();
         
@@ -793,6 +889,17 @@ class NetworkMountIndicator extends PanelMenu.Button {
                 }
             }
         });
+        
+        // Clear mounting state after a delay to allow mounts to complete
+        if (manual || isStartup) {
+            const mountingCompleteTimeoutId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 5, () => {
+                this._mountingInProgress = false;
+                this._updateStatus();
+                this._timeoutIds.delete(mountingCompleteTimeoutId);
+                return GLib.SOURCE_REMOVE;
+            });
+            this._timeoutIds.add(mountingCompleteTimeoutId);
+        }
             
         if (manual) {
             this._notify(_('Mount Check'), _(`Checking ${total} locations, ${mounted} already mounted`));
@@ -803,6 +910,9 @@ class NetworkMountIndicator extends PanelMenu.Button {
     
     _mountAllEnabled() {
         let count = 0;
+        this._mountingInProgress = true;
+        this._updateIconState();
+        
         this._bookmarks
             .filter(bookmark => bookmark.enabled)
             .forEach(bookmark => {
@@ -811,6 +921,15 @@ class NetworkMountIndicator extends PanelMenu.Button {
                     count++;
                 }
             });
+        
+        // Clear mounting state after delay
+        const mountAllCompleteTimeoutId = GLib.timeout_add_seconds(GLib.PRIORITY_DEFAULT, 5, () => {
+            this._mountingInProgress = false;
+            this._updateStatus();
+            this._timeoutIds.delete(mountAllCompleteTimeoutId);
+            return GLib.SOURCE_REMOVE;
+        });
+        this._timeoutIds.add(mountAllCompleteTimeoutId);
             
         this._notify(_('Mounting All'), _(`Attempting to mount ${count} locations`));
     }
