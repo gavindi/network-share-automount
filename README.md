@@ -2,9 +2,20 @@
 ![screenshot](https://github.com/gavindi/network-automount/blob/master/media/NetworkautomountScreenshot.png)
 
 ## Mount your bookmarked network shares
-This extension will mount your bookmarked network shares and periodically check them should they become unmounted for any reason.  It has options to control (re)mount frequency.
+This extension will mount your bookmarked network shares and periodically check them should they become unmounted for any reason.  It has options to control (re)mount frequency and provides visual status feedback through custom icons.
 
 I was inspired by [Gigolo](https://docs.xfce.org/apps/gigolo/start) but sometimes crashes and also doesn't display a MessageTray icon under Wayland sessions.  Also, I thought "why does this need to be an app?".  So, I vibed with Claude to create this.
+
+## Features
+
+- ✅ **Automatic mounting** of bookmarked network shares
+- ✅ **Custom symlink creation** for easy access from your home directory
+- ✅ **Visual status indicators** with custom SVG icons
+- ✅ **Retry mechanism** for failed mounts with configurable attempts
+- ✅ **Per-bookmark configuration** for auto-mount and symlink settings
+- ✅ **Comprehensive notification system** with granular controls
+- ✅ **Real-time file monitoring** for bookmark changes
+- ✅ **Advanced preferences UI** with tabbed organization
 
 ## Installation from source
 
@@ -12,11 +23,27 @@ The extension can be installed directly from source, either for the convenience 
 
 ### Build Dependencies
 
-This extension has no special build dependancies.
+This extension has no special build dependencies.
+
+### Required Files Structure
+
+```
+network-automount/
+├── extension.js                    # Main extension code
+├── prefs.js                       # Preferences UI
+├── metadata.json                  # Extension metadata
+├── Makefile                       # Build automation
+├── schemas/
+│   └── org.gnome.shell.extensions.network-share-automount.gschema.xml
+├── icons/                         # Custom SVG icons
+│   ├── folder-remote-connected-symbolic.svg
+│   └── folder-remote-disconnected-symbolic.svg
+└── README.md
+```
 
 ### Quick Install
 
-Clone the repository or download the branch from github. A simple Makefile is included.
+Clone the repository or download the branch from github. A comprehensive Makefile is included.
 
 ```bash
 git clone https://github.com/gavindi/network-automount
@@ -26,9 +53,12 @@ make install
 
 ##### Build Process
 
-Compiles GSettings schemas (required for preferences)
-Copies all necessary files to a build directory
-Creates proper directory structure
+The Makefile automatically handles:
+- Compiling GSettings schemas (required for preferences)
+- Copying all necessary files including custom icons
+- Creating proper directory structure in build/
+- Installing icons directory with all SVG files
+- Validating all required files are present
 
 ##### Installation Options
 
@@ -38,11 +68,15 @@ make install
 
 # System-wide installation (requires sudo)
 make install-system
+
+# Validate all required files are present
+make validate
 ```
+
 ##### Development Workflow
 
 ```bash
-# One command to clean, install, and enable
+# One command to clean, build, install, and enable
 make dev
 
 # Check if extension is installed/enabled
@@ -50,12 +84,28 @@ make status
 
 # Restart GNOME Shell on X11
 make restart-shell
+
+# Watch for file changes and auto-rebuild
+make watch
+
+# View extension logs
+make logs
 ```
+
 ##### Distribution
 
 ```bash
-make dist - Creates a zip file for sharing/publishing
+# Creates a zip file for sharing/publishing
+make dist
 ```
+
+##### Icon Management
+
+The extension includes custom SVG icons that provide visual feedback:
+- **🟢 Connected state**: Green indicator when all enabled network shares are mounted
+- **🔴 Mounting/Disconnected state**: Red indicator during mounting or when shares are disconnected
+
+Icons are automatically copied during installation. If custom icons are missing, the extension gracefully falls back to standard GNOME icons.
 
 ##### Quick Usage
 
@@ -68,7 +118,36 @@ make enable
 
 # Or do everything at once for development
 make dev
+
+# Check status and view logs
+make status
+make logs
 ```
+
+##### Additional Makefile Targets
+
+```bash
+make help           # Show all available commands
+make validate       # Check all required files exist
+make reload         # Disable and re-enable extension
+make quick          # Quick install and status check
+make uninstall      # Remove extension from user directory
+make clean          # Clean build directory
+```
+
+## Visual Status Indicators
+
+The extension provides clear visual feedback through custom panel icons:
+
+### Icon States
+- **🟢 All Connected**: Green dot indicator when all enabled bookmarks are mounted
+- **🔴 Mounting/Issues**: Red dot with X when mounting is in progress or shares are disconnected
+- **⚪ Default**: Standard folder icon when no bookmarks are configured
+
+### Custom Icons
+The extension uses SVG icons that automatically adapt to your GNOME theme:
+- `folder-remote-connected-symbolic.svg` - Connected state
+- `folder-remote-disconnected-symbolic.svg` - Disconnected/mounting state
 
 # Step-by-Step Custom Mount Points Setup
 
@@ -158,7 +237,7 @@ Go to **"Bookmarks" tab** - you should see your network bookmarks listed.
 1. **Wait 10-15 seconds** for auto-mounting
 
 2. **Check the status**:
-   - Extension icon in top bar should show mounted shares
+   - Extension icon in top bar should show connected state (🟢)
    - Click extension icon to see mount status
 
 3. **Verify symlinks created**:
@@ -211,6 +290,7 @@ df -h ~/NetworkMounts/NAS-Media
 ### Check Extension Status:
 ```bash
 gnome-extensions list --enabled | grep network-automount
+make status  # If using Makefile
 ```
 
 ### Check Mount Status:
@@ -229,6 +309,7 @@ find ~/NetworkMounts -type l -ls
 2. **Permission errors**: Ensure `~/NetworkMounts` is writable
 3. **Broken symlinks**: Unmount/remount shares via extension menu
 4. **Shares not mounting**: Check network connectivity and credentials
+5. **Icons not showing**: Check if custom SVG files are installed
 
 ### Force Refresh:
 1. Click extension icon → "Check All Now"
@@ -238,14 +319,28 @@ find ~/NetworkMounts -type l -ls
    gnome-extensions enable network-automount@gavindi.github.com
    ```
 
+### Debug Commands:
+```bash
+# View extension logs
+make logs
+
+# Validate installation
+make validate
+
+# Rebuild if needed
+make clean
+make dev
+```
+
 ---
 
 ## Success! 🎉
 
 You now have:
 - ✅ Automatic mounting of network shares
-- ✅ Easy access via `~/Network/Mounts` 
+- ✅ Easy access via `~/NetworkMounts` 
 - ✅ Custom names for each share
+- ✅ Visual status indicators
 - ✅ Integration with all applications
 
 ### Next Steps:
@@ -255,9 +350,123 @@ You now have:
 
 **Pro Tip**: The extension will automatically recreate symlinks after reboots, network changes, or credential updates!
 
+## Advanced Features
+
+### Retry Mechanism
+- Configurable retry attempts for failed mounts
+- Adjustable delay between retry attempts
+- Visual feedback for retry status
+
+### Notification System
+- Granular notification controls
+- Success/error notification toggles
+- Transient notifications that don't clutter your desktop
+
+### Performance Optimizations
+- File monitoring for bookmarks instead of periodic disk reads
+- Efficient mount status checking
+- Reduced battery usage on laptops
+
+### Per-Bookmark Configuration
+- Individual auto-mount settings
+- Custom symlink paths
+- Independent symlink creation (works even without auto-mount)
+
+## Manual Installation (Without Makefile)
+
+If you prefer manual installation:
+
+1. **Create extension directory**:
+   ```bash
+   mkdir -p ~/.local/share/gnome-shell/extensions/network-share-automount@gavindi.github.com
+   cd ~/.local/share/gnome-shell/extensions/network-share-automount@gavindi.github.com
+   ```
+
+2. **Copy source files**:
+   ```bash
+   cp extension.js .
+   cp prefs.js .
+   cp metadata.json .
+   ```
+
+3. **Copy and compile schemas**:
+   ```bash
+   mkdir schemas
+   cp schemas/org.gnome.shell.extensions.network-share-automount.gschema.xml schemas/
+   glib-compile-schemas schemas/
+   ```
+
+4. **Copy icons directory**:
+   ```bash
+   cp -r icons .
+   ```
+
+5. **Enable extension**:
+   ```bash
+   gnome-extensions enable network-share-automount@gavindi.github.com
+   ```
+
+## Troubleshooting
+
+### Common Issues
+
+**Extension not loading:**
+```bash
+# Check logs for errors
+journalctl -f -o cat /usr/bin/gnome-shell | grep -i network
+
+# Validate installation
+make validate
+```
+
+**Icons not appearing:**
+```bash
+# Check if icons were copied
+ls -la ~/.local/share/gnome-shell/extensions/network-share-automount@gavindi.github.com/icons/
+
+# Check permissions
+find ~/.local/share/gnome-shell/extensions/network-share-automount@gavindi.github.com -name "*.svg" -ls
+```
+
+**Mounts failing:**
+- Check network connectivity
+- Verify credentials in file manager first
+- Check if shares are accessible manually
+- Review notification messages for specific errors
+
+**Symlinks not working:**
+- Ensure base directory exists and is writable
+- Check that "Create Symlink" is enabled for specific bookmarks
+- Verify mount points are valid
+
+### Debug Commands
+
+```bash
+# Complete extension status
+make status
+
+# Live log monitoring
+make logs
+
+# Reinstall with clean state
+make uninstall
+make clean
+make install
+
+# Quick validation
+make validate
+```
+
 ## Bug Reporting
 
 Bugs should be reported to the Github bug tracker [https://github.com/gavindi/network-automount/issues](https://github.com/gavindi/network-automount/issues).
+
+When reporting bugs, please include:
+- Extension version (check `metadata.json`)
+- GNOME Shell version
+- Output of `make validate`
+- Relevant log entries from `make logs`
+- Steps to reproduce the issue
 
 ## License
 Network Automount Gnome Shell extension is distributed under the terms of the GNU General Public License, version 2. See the LICENSE file for details.
@@ -276,14 +485,31 @@ Network Automount Gnome Shell extension is distributed under the terms of the GN
 - **Improvement**: Runtime state (fail counts, settings) preserved during bookmark reloads
 - **Battery**: Reduced battery usage on laptops due to less frequent file system access
 
+#### 🎨 Visual Enhancements
+- **New**: Custom SVG icons for connection status
+  - Connected state: Green indicator for successful mounts
+  - Mounting/Disconnected state: Red indicator during operations
+  - Automatic theme adaptation using currentColor
+- **Enhancement**: Real-time visual feedback during mount operations
+- **Improvement**: Clear status indicators in panel menu
+
+#### 🔧 Build System Improvements
+- **Enhanced Makefile**: Comprehensive build automation with icon support
+- **New Commands**: Added validate, watch, logs, and help targets
+- **Icon Management**: Automatic copying of icons directory during build
+- **Validation**: File structure and dependency checking
+- **Development**: Streamlined development workflow with auto-rebuild
+
 #### 🐛 Bug Fixes
 - **Resource Management**: Proper cleanup of file monitor in destroy() method
 - **Memory**: Better timeout tracking and cleanup
+- **Icons**: Graceful fallback to system icons if custom SVGs missing
 
 #### 🔧 Technical Changes
 - Separated bookmark loading logic from periodic mount checking
 - Enhanced error handling for file monitoring fallback
 - Improved logging for debugging bookmark file changes
+- Added mounting state tracking for accurate icon updates
 
 ---
 
