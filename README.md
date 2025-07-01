@@ -10,12 +10,12 @@ I was inspired by [Gigolo](https://docs.xfce.org/apps/gigolo/start) but sometime
 
 - ✅ **Automatic mounting** of bookmarked network shares
 - ✅ **Custom symlink creation** for easy access from your home directory
-- ✅ **Visual status indicators** with custom SVG icons
+- ✅ **Visual status indicators** with custom SVG icons and consistent UI branding
 - ✅ **Retry mechanism** for failed mounts with configurable attempts
 - ✅ **Per-bookmark configuration** for auto-mount and symlink settings
 - ✅ **Comprehensive notification system** with granular controls
 - ✅ **Real-time file monitoring** for bookmark changes
-- ✅ **Advanced preferences UI** with tabbed organization
+- ✅ **Advanced preferences UI** with tabbed organization and custom icons
 
 ## Installation from source
 
@@ -104,6 +104,7 @@ make dist
 The extension includes custom SVG icons that provide visual feedback:
 - **🟢 Connected state**: Green indicator when all enabled network shares are mounted
 - **🔴 Mounting/Disconnected state**: Red indicator during mounting or when shares are disconnected
+- **🎨 UI Integration**: Custom connected icon appears in preferences About page for consistent branding
 
 Icons are automatically copied during installation. If custom icons are missing, the extension gracefully falls back to standard GNOME icons.
 
@@ -137,7 +138,7 @@ make clean          # Clean build directory
 
 ## Visual Status Indicators
 
-The extension provides clear visual feedback through custom panel icons:
+The extension provides clear visual feedback through custom panel icons and consistent UI branding:
 
 ### Icon States
 - **🟢 All Connected**: Green dot indicator when all enabled bookmarks are mounted
@@ -146,8 +147,13 @@ The extension provides clear visual feedback through custom panel icons:
 
 ### Custom Icons
 The extension uses SVG icons that automatically adapt to your GNOME theme:
-- `folder-remote-connected-symbolic.svg` - Connected state
+- `folder-remote-connected-symbolic.svg` - Connected state (used in panel and preferences)
 - `folder-remote-disconnected-symbolic.svg` - Disconnected/mounting state
+
+### UI Integration
+- **Panel Indicator**: Real-time status updates during mount operations
+- **Preferences About Page**: Custom connected icon for consistent branding
+- **Automatic Fallback**: Gracefully falls back to system icons if custom SVGs are missing
 
 # Step-by-Step Custom Mount Points Setup
 
@@ -426,6 +432,10 @@ ls -la ~/.local/share/gnome-shell/extensions/network-share-automount@gavindi.git
 
 # Check permissions
 find ~/.local/share/gnome-shell/extensions/network-share-automount@gavindi.github.com -name "*.svg" -ls
+
+# Test preferences icon loading
+gnome-extensions prefs network-share-automount@gavindi.github.com
+# Check About page for custom icon
 ```
 
 **Mounts failing:**
@@ -433,6 +443,11 @@ find ~/.local/share/gnome-shell/extensions/network-share-automount@gavindi.githu
 - Verify credentials in file manager first
 - Check if shares are accessible manually
 - Review notification messages for specific errors
+
+**Icons not showing in preferences:**
+- Check if `icons/folder-remote-connected-symbolic.svg` exists in extension directory
+- Verify file permissions are readable
+- Extension automatically falls back to system icons if custom ones are missing
 
 **Symlinks not working:**
 - Ensure base directory exists and is writable
@@ -491,7 +506,9 @@ Network Automount Gnome Shell extension is distributed under the terms of the GN
   - Mounting/Disconnected state: Red indicator during operations
   - Automatic theme adaptation using currentColor
 - **Enhancement**: Real-time visual feedback during mount operations
+- **Integration**: Custom icons used consistently in panel and preferences About page
 - **Improvement**: Clear status indicators in panel menu
+- **Fallback**: Graceful fallback to system icons if custom SVGs are missing
 
 #### 🔧 Build System Improvements
 - **Enhanced Makefile**: Comprehensive build automation with icon support
