@@ -1,155 +1,171 @@
-# Network Share Automount GNOME Shell Extension Makefile
-
-# Extension metadata
+# Network Share Automount Extension Makefile
 UUID = network-share-automount@gavindi.github.com
-EXTENSION_NAME = network-share-automount
+DESTDIR = ~/.local/share/gnome-shell/extensions/$(UUID)
+SYSTEM_DESTDIR = /usr/share/gnome-shell/extensions/$(UUID)
 
-# Directories
-SRC_DIR = .
+# Source files to copy
+SOURCES = extension.js prefs.js metadata.json
+SCHEMAS = schemas/org.gnome.shell.extensions.network-share-automount.gschema.xml
 BUILD_DIR = build
-SCHEMAS_DIR = schemas
-INSTALL_DIR = $(HOME)/.local/share/gnome-shell/extensions/$(UUID)
-SYSTEM_SCHEMAS_DIR = /usr/share/glib-2.0/schemas
-
-# Files to include in the extension
-EXTENSION_FILES = \
-	extension.js \
-	prefs.js \
-	metadata.json
-
-SCHEMA_FILES = \
-	$(SCHEMAS_DIR)/org.gnome.shell.extensions.network-share-automount.gschema.xml
 
 # Default target
 all: build
-	@echo "Use 'make install' to install the extension."
 
-# Build the extension (compile schemas)
-build:
+# Build the extension
+build: clean
 	@echo "Building extension..."
-	# Create build directory
-	mkdir -p $(BUILD_DIR)
-	# Copy extension files
-	cp $(EXTENSION_FILES) $(BUILD_DIR)/
-	# Copy and compile schema
-	mkdir -p $(BUILD_DIR)/$(SCHEMAS_DIR)
-	cp $(SCHEMA_FILES) $(BUILD_DIR)/$(SCHEMAS_DIR)/
-	glib-compile-schemas $(BUILD_DIR)/$(SCHEMAS_DIR)/
+	@mkdir -p $(BUILD_DIR)
+	@cp $(SOURCES) $(BUILD_DIR)/
+	@mkdir -p $(BUILD_DIR)/schemas
+	@cp $(SCHEMAS) $(BUILD_DIR)/schemas/
+	@if [ -d "icons" ]; then \
+		echo "Copying icons directory..."; \
+		cp -r icons $(BUILD_DIR)/; \
+	else \
+		echo "Warning: icons directory not found, creating empty icons directory"; \
+		mkdir -p $(BUILD_DIR)/icons; \
+	fi
+	@echo "Compiling schemas..."
+	@glib-compile-schemas $(BUILD_DIR)/schemas/
 	@echo "Build complete!"
 
-# Install extension to user directory
+# Install to user directory (recommended)
 install: build
-	@echo "Installing extension to $(INSTALL_DIR)..."
-	# Remove existing installation
-	rm -rf $(INSTALL_DIR)
-	# Create installation directory
-	mkdir -p $(INSTALL_DIR)
-	# Copy all built files
-	cp $(EXTENSION_FILES) $(INSTALL_DIR)/
-	# Install schema to extension directory
-	mkdir -p $(INSTALL_DIR)/schemas
-	cp $(SCHEMA_FILES) $(INSTALL_DIR)/schemas/
-	glib-compile-schemas $(INSTALL_DIR)/schemas/
-	@echo ""
-	@echo "Extension installed successfully!"
-	@echo "Please restart GNOME Shell:"
-	@echo "  - On X11: Press Alt+F2, type 'r', press Enter"
-	@echo "  - On Wayland: Log out and log back in"
-	@echo "Then enable the extension with:"
-	@echo "  gnome-extensions enable $(UUID)"
+	@echo "Installing extension to user directory..."
+	@mkdir -p $(DESTDIR)
+	@cp -r $(BUILD_DIR)/* $(DESTDIR)/
+	@echo "Extension installed to $(DESTDIR)"
+	@echo "Enable with: gnome-extensions enable $(UUID)"
 
-# Install system-wide (requires sudo)
+# Install to system directory (requires sudo)
 install-system: build
-	@echo "Installing extension system-wide..."
-	sudo mkdir -p /usr/share/gnome-shell/extensions/$(UUID)
-	sudo cp -r $(BUILD_DIR)/* /usr/share/gnome-shell/extensions/$(UUID)/
-	sudo cp $(SCHEMA_FILES) $(SYSTEM_SCHEMAS_DIR)/
-	sudo glib-compile-schemas $(SYSTEM_SCHEMAS_DIR)/
-	@echo "System-wide installation complete!"
+	@echo "Installing extension to system directory..."
+	@sudo mkdir -p $(SYSTEM_DESTDIR)
+	@sudo cp -r $(BUILD_DIR)/* $(SYSTEM_DESTDIR)/
+	@echo "Extension installed to $(SYSTEM_DESTDIR)"
+	@echo "Enable with: gnome-extensions enable $(UUID)"
 
-# Uninstall from user directory
-uninstall:
-	@echo "Uninstalling extension..."
-	# Disable extension first
-	-gnome-extensions disable $(UUID)
-	# Remove extension directory
-	rm -rf $(INSTALL_DIR)
-	@echo "Extension uninstalled!"
-
-# Uninstall system-wide installation
-uninstall-system:
-	@echo "Uninstalling system-wide extension..."
-	-gnome-extensions disable $(UUID)
-	sudo rm -rf /usr/share/gnome-shell/extensions/$(UUID)
-	sudo rm -f $(SYSTEM_SCHEMAS_DIR)/org.gnome.shell.extensions.network-share-automount.gschema.xml
-	sudo glib-compile-schemas $(SYSTEM_SCHEMAS_DIR)/
-	@echo "System-wide extension uninstalled!"
-
-# Clean build artifacts
-clean:
-	@echo "Cleaning build directory..."
-	rm -rf $(BUILD_DIR)
-	@echo "Clean complete!"
-
-# Create a distributable zip file
-dist: build
-	@echo "Creating distribution package..."
-	cd $(BUILD_DIR) && zip -r ../$(EXTENSION_NAME)-v$(shell grep '"version"' metadata.json | cut -d: -f2 | tr -d ' ,' | head -1).zip .
-	@echo "Distribution package created!"
-
-# Enable the extension after installation
+# Enable the extension
 enable:
 	@echo "Enabling extension..."
-	gnome-extensions enable $(UUID)
-	@echo "Extension enabled!"
+	@gnome-extensions enable $(UUID)
 
 # Disable the extension
 disable:
 	@echo "Disabling extension..."
-	gnome-extensions disable $(UUID)
-	@echo "Extension disabled!"
+	@gnome-extensions disable $(UUID)
 
-# Show extension status
+# Development workflow - clean, build, install, and enable
+dev: clean build install enable
+	@echo "Development installation complete!"
+
+# Check extension status
 status:
 	@echo "Extension status:"
-	@gnome-extensions list --enabled | grep -q $(UUID) && echo "Status: ENABLED" || echo "Status: DISABLED"
-	@gnome-extensions list | grep -q $(UUID) && echo "Installed: YES" || echo "Installed: NO"
+	@gnome-extensions list --enabled | grep $(UUID) && echo "✓ Enabled" || echo "✗ Disabled"
+	@gnome-extensions list --user | grep $(UUID) && echo "✓ Installed (user)" || echo "✗ Not installed (user)"
+	@if [ -d "$(SYSTEM_DESTDIR)" ]; then echo "✓ Installed (system)"; fi
 
 # Restart GNOME Shell (X11 only)
 restart-shell:
 	@echo "Restarting GNOME Shell (X11 only)..."
-	@if [ "$$XDG_SESSION_TYPE" = "x11" ]; then \
-		busctl --user call org.gnome.Shell /org/gnome/Shell org.gnome.Shell Eval s 'Meta.restart("Restarting...")'; \
-	else \
-		echo "Wayland detected - please log out and log back in"; \
-	fi
+	@busctl --user call org.gnome.Shell /org/gnome/Shell org.gnome.Shell Eval s 'Meta.restart("Restarting…")'
 
-# Development workflow: reinstall and enable
-dev: clean install enable
-	@echo "Development installation complete!"
+# Create distribution package
+dist: build
+	@echo "Creating distribution package..."
+	@cd $(BUILD_DIR) && zip -r ../$(UUID)-v$(shell grep '"version"' metadata.json | cut -d':' -f2 | tr -d ' ,"').zip .
+	@echo "Distribution package created: $(UUID)-v$(shell grep '"version"' metadata.json | cut -d':' -f2 | tr -d ' ,"').zip"
+
+# Clean build directory
+clean:
+	@echo "Cleaning build directory..."
+	@rm -rf $(BUILD_DIR)
+	@rm -f *.zip
+
+# Uninstall from user directory
+uninstall:
+	@echo "Uninstalling extension from user directory..."
+	@gnome-extensions disable $(UUID) 2>/dev/null || true
+	@rm -rf $(DESTDIR)
+	@echo "Extension uninstalled"
+
+# Uninstall from system directory
+uninstall-system:
+	@echo "Uninstalling extension from system directory..."
+	@gnome-extensions disable $(UUID) 2>/dev/null || true
+	@sudo rm -rf $(SYSTEM_DESTDIR)
+	@echo "Extension uninstalled from system"
+
+# View logs
+logs:
+	@echo "Viewing extension logs (Ctrl+C to exit)..."
+	@journalctl -f -o cat /usr/bin/gnome-shell | grep -i network
+
+# Validate extension files
+validate:
+	@echo "Validating extension files..."
+	@for file in $(SOURCES); do \
+		if [ ! -f "$$file" ]; then \
+			echo "✗ Missing required file: $$file"; \
+			exit 1; \
+		else \
+			echo "✓ Found: $$file"; \
+		fi; \
+	done
+	@if [ ! -f "$(SCHEMAS)" ]; then \
+		echo "✗ Missing schema file: $(SCHEMAS)"; \
+		exit 1; \
+	else \
+		echo "✓ Found: $(SCHEMAS)"; \
+	fi
+	@if [ -d "icons" ]; then \
+		echo "✓ Found: icons directory"; \
+		@find icons -name "*.svg" -type f | while read icon; do \
+			echo "  ✓ Icon: $$icon"; \
+		done; \
+	else \
+		echo "⚠ Warning: icons directory not found"; \
+	fi
+	@echo "Validation complete!"
+
+# Development helpers
+reload: disable enable
+	@echo "Extension reloaded!"
+
+watch:
+	@echo "Watching for file changes (Ctrl+C to stop)..."
+	@while true; do \
+		inotifywait -r -e modify,create,delete . 2>/dev/null && \
+		echo "Files changed, rebuilding..." && \
+		make dev; \
+	done
+
+# Quick install and test
+quick: dev
+	@echo "Quick installation complete! Check status:"
+	@make status
 
 # Help target
 help:
-	@echo "Network Share Automount Extension Build System"
-	@echo ""
 	@echo "Available targets:"
-	@echo "  build           - Build the extension (compile schemas)"
-	@echo "  install         - Install to user directory (~/.local/share/gnome-shell/extensions/)"
-	@echo "  install-system  - Install system-wide (requires sudo)"
-	@echo "  uninstall       - Remove from user directory"
-	@echo "  uninstall-system- Remove system-wide installation"
-	@echo "  clean           - Remove build artifacts"
-	@echo "  dist            - Create distributable zip file"
-	@echo "  enable          - Enable the extension"
-	@echo "  disable         - Disable the extension"
-	@echo "  status          - Show extension status"
-	@echo "  restart-shell   - Restart GNOME Shell (X11 only)"
-	@echo "  dev             - Clean, install, and enable (development workflow)"
-	@echo "  help            - Show this help message"
-	@echo ""
-	@echo "Quick start:"
-	@echo "  make install    # Install the extension"
-	@echo "  make enable     # Enable the extension"
+	@echo "  build          - Build the extension"
+	@echo "  install        - Install to user directory (recommended)"
+	@echo "  install-system - Install to system directory (requires sudo)"
+	@echo "  enable         - Enable the extension"
+	@echo "  disable        - Disable the extension"
+	@echo "  dev            - Full development cycle (clean, build, install, enable)"
+	@echo "  status         - Check extension installation and status"
+	@echo "  restart-shell  - Restart GNOME Shell (X11 only)"
+	@echo "  dist           - Create distribution zip package"
+	@echo "  clean          - Clean build directory"
+	@echo "  uninstall      - Uninstall from user directory"
+	@echo "  uninstall-system - Uninstall from system directory"
+	@echo "  logs           - View extension logs"
+	@echo "  validate       - Validate extension files"
+	@echo "  reload         - Disable and re-enable extension"
+	@echo "  watch          - Watch for file changes and auto-rebuild"
+	@echo "  quick          - Quick install and status check"
+	@echo "  help           - Show this help message"
 
-# Declare phony targets
-.PHONY: all build install install-system uninstall uninstall-system clean dist enable disable status restart-shell dev help
+.PHONY: all build install install-system enable disable dev status restart-shell dist clean uninstall uninstall-system logs validate reload watch quick help
