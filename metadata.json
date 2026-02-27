@@ -1,9 +1,9 @@
 {
-  "shell-version": ["45", "46", "47", "48", "49"],
+  "shell-version": ["46", "47", "48", "49", "50"],
   "uuid": "network-share-automount@gavindi.github.com",
   "name": "Network Share Automount",
   "description": "Automatically mount bookmarked network locations with advanced configuration options and allows for creating symlinks for easy access from your homer directory",
-  "version": 4,
+  "version": 5,
   "settings-schema": "org.gnome.shell.extensions.network-share-automount",
   "url": "https://github.com/gavindi/network-share-automount"
 }

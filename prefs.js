@@ -444,7 +444,9 @@ export default class NetworkShareAutomountPreferences extends ExtensionPreferenc
         
         logButton.connect('clicked', () => {
             try {
-                GLib.spawn_command_line_async('gnome-logs');
+                const appInfo = Gio.DesktopAppInfo.new('org.gnome.Logs.desktop');
+                if (appInfo)
+                    appInfo.launch([], null);
             } catch (e) {
                 console.error('Could not open logs:', e);
             }
@@ -475,45 +477,34 @@ export default class NetworkShareAutomountPreferences extends ExtensionPreferenc
     }
     
     _chooseMountDirectory(entry, window) {
-        const dialog = new Gtk.FileChooserDialog({
+        const dialog = new Gtk.FileDialog({
             title: _('Choose Symlink Base Directory'),
-            action: Gtk.FileChooserAction.SELECT_FOLDER,
             modal: true,
-            transient_for: window
         });
-        
-        dialog.add_button(_('Cancel'), Gtk.ResponseType.CANCEL);
-        dialog.add_button(_('Select'), Gtk.ResponseType.ACCEPT);
-        
-        // Set initial directory to current value or home directory
+
+        let initialFolder = Gio.File.new_for_path(GLib.get_home_dir());
         const currentPath = entry.get_text();
         if (currentPath) {
             try {
                 const currentFile = Gio.File.new_for_path(currentPath);
-                if (currentFile.query_exists(null)) {
-                    dialog.set_current_folder(currentFile);
-                }
-            } catch (e) {
-                // If current path is invalid, fall back to home directory
-                dialog.set_current_folder(Gio.File.new_for_path(GLib.get_home_dir()));
-            }
-        } else {
-            dialog.set_current_folder(Gio.File.new_for_path(GLib.get_home_dir()));
+                if (currentFile.query_exists(null))
+                    initialFolder = currentFile;
+            } catch (_e) { /* fall back to home dir */ }
         }
-        
-        dialog.connect('response', (dialog, response) => {
-            if (response === Gtk.ResponseType.ACCEPT) {
-                const file = dialog.get_file();
+        dialog.set_initial_folder(initialFolder);
+
+        dialog.select_folder(window, null, (_dialog, result) => {
+            try {
+                const file = dialog.select_folder_finish(result);
                 if (file) {
                     entry.set_text(file.get_path());
-                    // Trigger the notify signal to save the setting
                     entry.notify('text');
                 }
+            } catch (e) {
+                if (!e.matches(Gio.IOErrorEnum, Gio.IOErrorEnum.CANCELLED))
+                    console.error('Error selecting folder:', e);
             }
-            dialog.destroy();
         });
-        
-        dialog.present();
     }
     
     _addAboutSettings(page) {
@@ -569,7 +560,7 @@ export default class NetworkShareAutomountPreferences extends ExtensionPreferenc
         
         const versionRow = new Adw.ActionRow({
             title: _('Version'),
-            subtitle: _('3.0')
+            subtitle: _('3.1')
         });
         technicalGroup.add(versionRow);
         

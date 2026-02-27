@@ -173,14 +173,20 @@ class NetworkMountIndicator extends PanelMenu.Button {
     }
     
     _connectSettings() {
-        this._settings.connect('changed::check-interval', () => {
-            this._startPeriodicCheck();
-        });
-        
-        this._settings.connect('changed::bookmark-settings', () => {
-            this._loadBookmarkSettings();
-            this._updateBookmarksList();
-        });
+        this._settingsSignalIds = [];
+
+        this._settingsSignalIds.push(
+            this._settings.connect('changed::check-interval', () => {
+                this._startPeriodicCheck();
+            })
+        );
+
+        this._settingsSignalIds.push(
+            this._settings.connect('changed::bookmark-settings', () => {
+                this._loadBookmarkSettings();
+                this._updateBookmarksList();
+            })
+        );
     }
     
     _setupBookmarksFileMonitoring() {
@@ -193,13 +199,11 @@ class NetworkMountIndicator extends PanelMenu.Button {
                 null
             );
             
-            this._bookmarksFileMonitor.connect('changed', (monitor, file, otherFile, eventType) => {
+            this._bookmarksMonitorHandlerId = this._bookmarksFileMonitor.connect('changed', (monitor, file, otherFile, eventType) => {
                 // Only react to changes, creations, and deletions
                 if (eventType === Gio.FileMonitorEvent.CHANGED ||
                     eventType === Gio.FileMonitorEvent.CREATED ||
                     eventType === Gio.FileMonitorEvent.DELETED) {
-                    
-                    console.log('Bookmarks file changed, reloading...');
                     
                     // Debounce rapid file changes with a short delay
                     if (this._bookmarksReloadTimeoutId) {
@@ -220,12 +224,8 @@ class NetworkMountIndicator extends PanelMenu.Button {
                 }
             });
             
-            console.log('Set up file monitoring for bookmarks file');
-            
         } catch (e) {
             console.error('Failed to set up bookmarks file monitoring:', e);
-            // Fall back to periodic loading if monitoring fails
-            console.log('Falling back to periodic bookmark reloading');
         }
     }
     
@@ -312,7 +312,7 @@ class NetworkMountIndicator extends PanelMenu.Button {
         let enabled = this._bookmarks.filter(b => b.enabled).length;
         let interval = this._settings.get_int('check-interval');
     
-        this._statusItem.label.text = _(`${mounted}/${total} mounted \u2022 Check every ${interval}min`);
+        this._statusItem.label.text = _('%d/%d mounted \u2022 Check every %d min').format(mounted, total, interval);
     
         // Update icon based on status
         this._updateIconState();
@@ -321,17 +321,14 @@ class NetworkMountIndicator extends PanelMenu.Button {
     _loadBookmarks() {
         try {
             if (!this._bookmarksFile.query_exists(null)) {
-                console.log('Bookmarks file does not exist');
                 this._bookmarks = [];
                 this._updateBookmarksList();
                 return;
             }
             
             let [success, contents] = this._bookmarksFile.load_contents(null);
-            if (!success) {
-                console.log('Failed to read bookmarks file');
+            if (!success)
                 return;
-            }
             
             let bookmarkLines = new TextDecoder().decode(contents).split('\n');
             let newBookmarks = bookmarkLines
@@ -371,9 +368,7 @@ class NetworkMountIndicator extends PanelMenu.Button {
             
             this._bookmarks = newBookmarks;
             this._loadBookmarkSettings();
-            
-            console.log(`Loaded ${this._bookmarks.length} network bookmarks`);
-            
+
         } catch (e) {
             console.error('Error loading bookmarks:', e);
             this._bookmarks = [];
@@ -516,7 +511,7 @@ class NetworkMountIndicator extends PanelMenu.Button {
             // Show symlink path if applicable
             if (bookmark.createSymlink) {
                 let symlinkPath = this._getSymlinkPath(bookmark);
-                let symlinkItem = new PopupMenu.PopupMenuItem(_(`Linked to: ${symlinkPath}`), {
+                let symlinkItem = new PopupMenu.PopupMenuItem(_('Linked to: %s').format(symlinkPath), {
                     reactive: false,
                     style_class: 'popup-menu-item-inactive'
                 });
@@ -532,8 +527,8 @@ class NetworkMountIndicator extends PanelMenu.Button {
             
         } else {
             // Show unmounted status
-            let statusText = bookmark.failCount > 0 ? 
-                _(`Status: Failed (${bookmark.failCount} attempts)`) : 
+            let statusText = bookmark.failCount > 0 ?
+                _('Status: Failed (%d attempts)').format(bookmark.failCount) :
                 _('Status: Not Mounted');
             
             let statusItem = new PopupMenu.PopupMenuItem(statusText, {
@@ -553,7 +548,7 @@ class NetworkMountIndicator extends PanelMenu.Button {
         submenu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
         
         // Connection details
-        let uriItem = new PopupMenu.PopupMenuItem(_(`URI: ${bookmark.uri}`), {
+        let uriItem = new PopupMenu.PopupMenuItem('URI: ' + bookmark.uri, {
             reactive: false,
             style_class: 'popup-menu-item-inactive'
         });
@@ -665,7 +660,6 @@ class NetworkMountIndicator extends PanelMenu.Button {
             try {
                 symlinkFile.make_symbolic_link(gvfsPath, null);
                 this._symlinkPaths.set(bookmark.uri, symlinkPath);
-                console.log(`Created symlink: ${symlinkPath} → ${gvfsPath}`);
                 return true;
             } catch (e) {
                 console.error(`Failed to create symlink for ${bookmark.name}:`, e);
@@ -690,10 +684,8 @@ class NetworkMountIndicator extends PanelMenu.Button {
             if (symlinkFile.query_exists(null)) {
                 // Check if it's actually a symlink before removing
                 let info = symlinkFile.query_info('standard::is-symlink', Gio.FileQueryInfoFlags.NOFOLLOW_SYMLINKS, null);
-                if (info && info.get_is_symlink()) {
+                if (info && info.get_is_symlink())
                     symlinkFile.delete(null);
-                    console.log(`Removed symlink: ${symlinkPath}`);
-                }
             }
             
             this._symlinkPaths.delete(bookmark.uri);
@@ -728,8 +720,7 @@ class NetworkMountIndicator extends PanelMenu.Button {
                 (file, result) => {
                     try {
                         file.mount_enclosing_volume_finish(result);
-                        console.log(`Successfully mounted: ${bookmark.name}`);
-                        
+
                         bookmark.failCount = 0;
                         bookmark.lastAttempt = Date.now();
                         this._mountedLocations.set(bookmark.uri, Date.now());
@@ -782,14 +773,14 @@ class NetworkMountIndicator extends PanelMenu.Button {
             this._scheduleRetry(bookmark, retryDelay);
             
             this._notify(
-                _('Mount Failed - Retrying'), 
-                _(`${bookmark.name} (attempt ${bookmark.failCount}/${maxRetries})`), 
+                _('Mount Failed - Retrying'),
+                _('%s (attempt %d/%d)').format(bookmark.name, bookmark.failCount, maxRetries),
                 true
             );
         } else {
             this._notify(
-                _('Mount Failed'), 
-                _(`${bookmark.name}: ${errorMsg}`), 
+                _('Mount Failed'),
+                `${bookmark.name}: ${errorMsg}`,
                 true
             );
         }
@@ -827,8 +818,7 @@ class NetworkMountIndicator extends PanelMenu.Button {
                     (mount, result) => {
                         try {
                             mount.unmount_with_operation_finish(result);
-                            console.log(`Successfully unmounted: ${bookmark.name}`);
-                            
+
                             this._mountedLocations.delete(bookmark.uri);
                             this._notify(_('Unmounted'), bookmark.name);
                             
@@ -902,10 +892,9 @@ class NetworkMountIndicator extends PanelMenu.Button {
         }
             
         if (manual) {
-            this._notify(_('Mount Check'), _(`Checking ${total} locations, ${mounted} already mounted`));
+            this._notify(_('Mount Check'), _('Checking %d locations, %d already mounted').format(total, mounted));
         }
         
-        console.log(`Periodic check: ${mounted}/${total} mounted, ${this._bookmarks.length} total bookmarks`);
     }
     
     _mountAllEnabled() {
@@ -931,7 +920,7 @@ class NetworkMountIndicator extends PanelMenu.Button {
         });
         this._timeoutIds.add(mountAllCompleteTimeoutId);
             
-        this._notify(_('Mounting All'), _(`Attempting to mount ${count} locations`));
+        this._notify(_('Mounting All'), _('Attempting to mount %d locations').format(count));
     }
     
     _unmountAll() {
@@ -943,7 +932,7 @@ class NetworkMountIndicator extends PanelMenu.Button {
             }
         });
         
-        this._notify(_('Unmounting All'), _(`Unmounting ${count} locations`));
+        this._notify(_('Unmounting All'), _('Unmounting %d locations').format(count));
     }
     
     _startPeriodicCheck() {
@@ -963,7 +952,6 @@ class NetworkMountIndicator extends PanelMenu.Button {
             }
         );
         
-        console.log(`Started periodic check with ${interval} minute interval`);
     }
     
     _openSettings() {
@@ -985,8 +973,18 @@ class NetworkMountIndicator extends PanelMenu.Button {
     }
     
     destroy() {
+        // Disconnect settings signals
+        if (this._settingsSignalIds) {
+            this._settingsSignalIds.forEach(id => this._settings.disconnect(id));
+            this._settingsSignalIds = [];
+        }
+
         // Clean up file monitor
         if (this._bookmarksFileMonitor) {
+            if (this._bookmarksMonitorHandlerId) {
+                this._bookmarksFileMonitor.disconnect(this._bookmarksMonitorHandlerId);
+                this._bookmarksMonitorHandlerId = null;
+            }
             this._bookmarksFileMonitor.cancel();
             this._bookmarksFileMonitor = null;
         }
